@@ -25,6 +25,8 @@ import {WorkspaceActionButton, WorkspaceActionGroup, WorkspaceDetailPanel, Works
 import Modal from './inspect/Modal';
 
 import { ROUTER_RECIPE, routerDisplayName, type RouterPullRequest } from '../features/router/routerTypes';
+import { routerRegistrationOptions } from '../features/router/routerStore';
+import { isRouterModelInfo, preflightRouter, routerPreflightError } from '../features/router/routerRuntime';
 import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   automaticUpdateIsDue,
@@ -1561,6 +1563,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     visited.add(key);
 
     const info = typeof target === 'string' ? findCurrentModel(name) : target;
+    if (isRouterModelInfo(info)) {
+      const registration = routerRegistrationOptions(info);
+      if (!registration) throw new Error(`Router ${name} is incomplete and cannot be registered.`);
+      await api.registerModelDefinition(name, registration);
+      const fresh = await api.models(true);
+      const health = await api.health().catch(() => null);
+      const preflight = preflightRouter(info, fresh.data, health?.all_models_loaded || []);
+      if (!preflight.ok) throw new Error(routerPreflightError(preflight));
+      visited.delete(key);
+      return;
+    }
     const components = info && isCollectionModel(info) ? getCollectionComponents(info) : [];
 
     if (components.length > 0) {
@@ -1603,7 +1616,17 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     setLoadError(null);
     setLoadingModel(name);
     try {
-      await loadWithGlobalPolicy(model);
+      if (isRouterModelInfo(model)) {
+        const registration = routerRegistrationOptions(model);
+        if (!registration) throw new Error('Router definition is incomplete and cannot be registered.');
+        await api.registerModelDefinition(name, registration);
+        const fresh = await api.models(true);
+        const health = await api.health().catch(() => null);
+        const preflight = preflightRouter(model, fresh.data, health?.all_models_loaded || []);
+        if (!preflight.ok) throw new Error(routerPreflightError(preflight));
+      } else {
+        await loadWithGlobalPolicy(model);
+      }
       await refresh();
       onModelSelect(name);
     } catch (err) {
@@ -1944,6 +1967,50 @@ const ModelManager: React.FC<ModelManagerProps> = ({ onModelSelect, openModelReq
     displayName?: string,
   ): Promise<void> => {
     if (!api.isConnected) throw new Error('Connect to the Lemonade server before saving a router.');
+
+    const registered = new Set<string>();
+    const registering = new Set<string>();
+    const registerCustomDependency = async (component: ModelInfo): Promise<void> => {
+      const name = modelName(component);
+      const key = name.toLowerCase();
+      if (!name || registered.has(key) || !modelIsCustom(component)) return;
+      if (registering.has(key)) throw new Error(`Circular custom component reference: ${name}`);
+      registering.add(key);
+      if (isCollectionModel(component)) {
+        for (const nestedName of getCollectionComponents(component)) {
+          const nested = findCurrentModel(nestedName);
+          if (nested) await registerCustomDependency(nested);
+        }
+      }
+      await api.registerModelDefinition(canonicalCustomModelName(component), customRegistrationOptions(component));
+      registering.delete(key);
+      registered.add(key);
+    };
+
+    for (const componentName of request.components) {
+      const component = findCurrentModel(componentName);
+      if (component) await registerCustomDependency(component);
+    }
+
+    const routerInfo = {
+      id: request.model_name,
+      name: request.model_name,
+      model_name: request.model_name,
+      display_name: displayName?.trim() || routerDisplayName(request.model_name),
+      recipe: request.recipe,
+      type: 'chat',
+      labels: ['custom', 'router', 'chat'],
+      downloaded: true,
+      custom: true,
+      version: request.version,
+      components: request.components,
+      routing: request.routing,
+    } as ModelInfo;
+    const fresh = await api.models(true).catch(() => ({ data: allModels }));
+    const health = await api.health().catch(() => null);
+    const preflight = preflightRouter(routerInfo, fresh.data, health?.all_models_loaded || loadedModels);
+    if (!preflight.ok) throw new Error(routerPreflightError(preflight));
+
     await api.registerModelDefinition(request.model_name, {
       version: request.version,
       recipe: request.recipe,

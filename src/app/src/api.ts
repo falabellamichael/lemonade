@@ -320,6 +320,7 @@ export interface ChatCompletionStats {
   tokens: number;
   reasoningTokens: number;
   reasoningElapsedMs: number | null;
+  route?: Record<string, unknown> | null;
 }
 
 export interface LiveStreamStats {
@@ -1412,6 +1413,29 @@ class LemonadeAPI {
     await this._assertModelNotDownloading(modelName);
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const cachedRecipe = String((cachedModelInfo as any)?.recipe || '').trim().toLowerCase();
+    if (cachedRecipe === 'collection.router' || cachedRecipe.startsWith('collection.router.')) {
+      const components = Array.isArray((cachedModelInfo as any)?.components)
+        ? (cachedModelInfo as any).components
+        : [];
+      const routing = (cachedModelInfo as any)?.routing;
+      if (
+        components.length === 0 ||
+        !routing ||
+        typeof routing !== 'object' ||
+        Array.isArray(routing)
+      ) {
+        throw new Error(`Router ${modelName} is missing components or routing policy and cannot be registered.`);
+      }
+      const displayName = String((cachedModelInfo as any)?.display_name || '').trim();
+      return this.registerModelDefinition(modelName, {
+        version: String((cachedModelInfo as any)?.version || '1'),
+        recipe: 'collection.router',
+        components,
+        routing,
+        ...(displayName ? { display_name: displayName } : {}),
+      });
+    }
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
@@ -1430,6 +1454,16 @@ class LemonadeAPI {
   async effectiveLoadCommand(modelName: string, recipeOptions?: Record<string, unknown>, modelInfo?: ModelInfo | null): Promise<EffectiveLoadCommand> {
     const target = modelName.trim().toLowerCase();
     const cachedModelInfo = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const cachedRecipe = String((cachedModelInfo as any)?.recipe || '').trim().toLowerCase();
+    if (cachedRecipe === 'collection.router' || cachedRecipe.startsWith('collection.router.')) {
+      return {
+        model_name: modelName,
+        recipe: 'collection.router',
+        backend: 'virtual',
+        options: {},
+        args: [],
+      };
+    }
     const { recipeOptionsForModel } = await import(
       /* webpackChunkName: "model-configuration" */ './modelConfiguration'
     );
@@ -1439,6 +1473,14 @@ class LemonadeAPI {
   }
 
   async unloadModel(modelName?: string): Promise<unknown> {
+    if (modelName) {
+      const target = modelName.trim().toLowerCase();
+      const info = this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+      const recipe = String((info as any)?.recipe || '').trim().toLowerCase();
+      if (recipe === 'collection.router' || recipe.startsWith('collection.router.')) {
+        return { model_name: modelName, status: 'not_applicable', mode: 'router', virtual: true };
+      }
+    }
     const body = modelName ? { model_name: modelName } : {};
     const result = await this._json('/api/v1/unload', { method: 'POST', body });
     this._notifyModelsChanged();
@@ -1464,8 +1506,14 @@ class LemonadeAPI {
     recipeOptions?: Record<string, unknown>,
     modelInfo?: ModelInfo | null,
   ): Promise<unknown> {
+    const target = modelName.trim().toLowerCase();
+    const info = modelInfo || this.allModels.find(model => modelInfoKey(model).toLowerCase() === target) || null;
+    const recipe = String((info as any)?.recipe || '').trim().toLowerCase();
+    if (recipe === 'collection.router' || recipe.startsWith('collection.router.')) {
+      return this.loadModel(modelName, undefined, info);
+    }
     await this.unloadModel(modelName);
-    return this.loadModel(modelName, recipeOptions, modelInfo);
+    return this.loadModel(modelName, recipeOptions, info);
   }
 
   async deleteModel(modelName: string): Promise<unknown> {
@@ -2369,6 +2417,7 @@ class LemonadeAPI {
     let reasoningStartTime: number | null = null;
     let reasoningEndTime: number | null = null;
     let reasoningClosed = false;
+    let routeDecision: Record<string, unknown> | null = null;
 
     const reasoningElapsedMs = (now: number): number | null => {
       if (reasoningStartTime == null) return null;
@@ -2391,6 +2440,7 @@ class LemonadeAPI {
         tokens: tokenCount,
         reasoningTokens: reasoningTokenCount,
         reasoningElapsedMs: reasoningElapsedMs(now),
+        route: routeDecision,
       };
     };
 
@@ -2418,7 +2468,10 @@ class LemonadeAPI {
         /* webpackChunkName: "model-configuration" */ './modelConfiguration'
       );
       const requestModelInfo = this.allModels.find(candidate => modelInfoKey(candidate).toLowerCase() === model.trim().toLowerCase()) || null;
+      const requestRecipe = String((requestModelInfo as any)?.recipe || '').trim().toLowerCase();
+      const isRouterRequest = requestRecipe === 'collection.router' || requestRecipe.startsWith('collection.router.');
       const body: Record<string, unknown> = { model, messages, stream: true, ...samplingForModel(model, requestModelInfo), ...(params || {}) };
+      if (isRouterRequest && body.route_trace === undefined) body.route_trace = true;
       if (tools && tools.length > 0) body.tools = tools;
       const resp = await this._fetch('/api/v1/chat/completions', {
         method: 'POST',
@@ -2459,10 +2512,13 @@ class LemonadeAPI {
           }
           try {
             const chunk = JSON.parse(payload);
-            // Detect server-side error in SSE stream
+            if (isObject(chunk.x_lemonade_route)) routeDecision = { ...chunk.x_lemonade_route };
+            // If the Router already selected a candidate, keep that attribution in surfaced errors.
             if (chunk.error) {
               clearInterval(statsInterval);
-              onError?.(new Error(chunk.error.message || 'Server streaming error'));
+              const baseMessage = chunk.error.message || 'Server streaming error';
+              const routeTo = String(routeDecision?.route_to || '').trim();
+              onError?.(new Error(routeTo ? `${baseMessage} (Router selected ${routeTo}.)` : baseMessage));
               return;
             }
             respId = chunk.id || respId;
