@@ -28,6 +28,14 @@ if [ "$1" = "configure" ]; then
 	if getent group render > /dev/null; then
 		usermod -a -G render lemonade
 	fi
+
+	# Create /etc/lemonade and set ownership to lemonade user
+	# This is the primary config location for the systemd service
+	if [ ! -d /etc/lemonade ]; then
+		mkdir -p /etc/lemonade
+	fi
+	chown lemonade:lemonade /etc/lemonade
+	chmod 755 /etc/lemonade
 fi
 
 # #2125: migrate pre-fix upgrades — disable per-user lemond.service and stop

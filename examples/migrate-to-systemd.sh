@@ -67,7 +67,7 @@ declare -a SOURCE_PATHS=(
 )
 
 declare -a DEST_PATHS=(
-    "$LEMONADE_HOME/.config/lemonade"
+    "/etc/lemonade"
     "$LEMONADE_HOME/.cache/lemonade"
     "$LEMONADE_HOME/.cache/huggingface"
     "$LEMONADE_HOME/.local/share/lemonade-server"
@@ -160,8 +160,9 @@ echo ""
 echo -e "${GREEN}Migration completed successfully!${NC}"
 echo ""
 echo "Next steps:"
-echo "1. Verify the migrated files in $LEMONADE_HOME"
-echo "2. (Re)start the lemonade systemd service: systemctl restart lemond"
-echo "3. Check service status: systemctl status lemond"
-echo "4. Optionally, remove old files from $SOURCE_HOME to free up space"
+echo "1. Verify the migrated config files in /etc/lemonade"
+echo "2. Verify the migrated cache/data in $LEMONADE_HOME"
+echo "3. (Re)start the lemonade systemd service: systemctl restart lemond"
+echo "4. Check service status: systemctl status lemond"
+echo "5. Optionally, remove old files from $SOURCE_HOME to free up space"
 echo ""

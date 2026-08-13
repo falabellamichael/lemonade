@@ -56,6 +56,17 @@ public:
             return g_config_dir;
         }
 
+        // When running as the lemonade user (systemd service), prefer /etc/lemonade
+        // This allows a single writable config location for the system service
+        const char* user = std::getenv("USER");
+        if (user && std::string(user) == "lemonade") {
+            std::error_code ec;
+            fs::path etc_config("/etc/lemonade");
+            if (fs::is_directory(etc_config, ec) && !ec && access("/etc/lemonade", W_OK) == 0) {
+                return "/etc/lemonade";
+            }
+        }
+
         std::string xdg_config_home = get_environment_variable_utf8("XDG_CONFIG_HOME");
         if (!xdg_config_home.empty()) {
             return xdg_config_home + "/lemonade";

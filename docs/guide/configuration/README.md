@@ -8,10 +8,10 @@ Lemonade Server starts automatically with the OS after installation. Persistent 
 
 If you used an installer from the Lemonade release your `config.json` will be at these locations depending on your OS:
 
-- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/var/lib/lemonade/.config/lemonade/config.json`
-- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/opt/var/lib/lemonade/.config/lemonade/config.json`
+- **Linux — `apt`/`.deb` (Debian/Ubuntu):** `/etc/lemonade/config.json`
+- **Linux — `dnf`/`.rpm` (Fedora/Red Hat):** `/etc/lemonade/config.json`
 
-  > Note: For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
+  > Note: The systemd service runs as the `lemonade` user and stores config in `/etc/lemonade`, which is owned by that user. For Debian/Ubuntu, upgrading the package automatically migrates data from the old `/opt/var/lib/lemonade` path to `/var/lib/lemonade`.
 
 - **Windows:** `%USERPROFILE%\.config\lemonade\config.json`
 - **macOS:** `/Library/Application Support/lemonade/.config/config.json`
@@ -401,11 +401,8 @@ lemond --port 9000 --host 0.0.0.0
 If the server won't start and CLI arguments aren't sufficient, you can edit config.json directly. Restart the server after making changes:
 
 ```bash
-# Linux (Debian/Ubuntu)
-sudo nano /var/lib/lemonade/.config/lemonade/config.json
-
-# Linux (Fedora/Red Hat)
-sudo nano /opt/var/lib/lemonade/.config/lemonade/config.json
+# Linux (Debian/Ubuntu and Fedora/Red Hat)
+sudo nano /etc/lemonade/config.json
 
 sudo systemctl restart lemond
 

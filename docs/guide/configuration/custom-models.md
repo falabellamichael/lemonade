@@ -253,7 +253,7 @@ If you used an installer from a Lemonade release, the config directory is typica
 
 | OS | Config directory |
 |----|------------------|
-| Linux systemd install | `/var/lib/lemonade/.config/lemonade` |
+| Linux systemd install | `/etc/lemonade` |
 | Windows | `%USERPROFILE%\.config\lemonade` |
 | macOS system install | `/Library/Application Support/lemonade/.config` |
 
