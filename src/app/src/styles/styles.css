@@ -741,6 +741,10 @@ input[type="checkbox"]:disabled {
               box-shadow var(--duration-fast) var(--ease-out);
 }
 
+.loaded-overview__row--selectable {
+  cursor: pointer;
+}
+
 .loaded-overview__row:hover,
 .loaded-overview__row:focus-within {
   border-color: var(--border-strong);

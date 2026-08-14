@@ -4177,10 +4177,13 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
 
           return (
             <article
-              className={`loaded-overview__row${isActive ? ' loaded-overview__row--selected' : ''}${isUnloading ? ' loaded-overview__row--busy' : ''}`}
+              className={`loaded-overview__row${isActive ? ' loaded-overview__row--selected' : ''}${selectable && !isActive && !isUnloading ? ' loaded-overview__row--selectable' : ''}${isUnloading ? ' loaded-overview__row--busy' : ''}`}
               key={m.model_name}
               role="listitem"
               aria-label={`${m.model_name}, ${modeLabel}, running${deviceLabel ? `, ${deviceLabel}` : ''}${sizeLabel ? `, ${sizeLabel}` : ''}${isActive ? ', selected' : ''}`}
+              onClick={() => {
+                if (selectable && !isActive && !isUnloading) onModelSelect(m.model_name);
+              }}
             >
               <div
                 className="loaded-overview__task"
@@ -4198,11 +4201,14 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                   <button
                     type="button"
                     className="loaded-overview__details-link"
-                    onClick={() => onOpenModelDetails(m.model_name)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenModelDetails(m.model_name);
+                    }}
                     aria-label={`Open ${m.model_name} model details`}
                     title={`Open ${m.model_name} in Models`}
                   >
-                    <Icon name="model-details" size={18} aria-hidden="true" />
+                    <Icon name="model-details" size={14} aria-hidden="true" />
                   </button>
                 </div>
                 <div className="loaded-overview__status-line">
@@ -4230,7 +4236,10 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
                   <button
                     type="button"
                     className="loaded-overview__selection-pill loaded-overview__selection-pill--use"
-                    onClick={() => onModelSelect(m.model_name)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onModelSelect(m.model_name);
+                    }}
                     disabled={isUnloading}
                   >
                     Use
@@ -4245,7 +4254,10 @@ const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onM
               <button
                 type="button"
                 className="loaded-overview__unload"
-                onClick={() => onUnloadModel(m.model_name)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onUnloadModel(m.model_name);
+                }}
                 disabled={isUnloading}
                 aria-label={isUnloading ? `Unloading ${m.model_name}` : `Unload ${m.model_name}`}
                 title={isUnloading ? 'Unloading…' : `Unload ${m.model_name}`}
