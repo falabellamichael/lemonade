@@ -6,7 +6,7 @@ import { Icon, CapabilityIcon } from './Icon';
 import WorkspaceMobileMenuButton from './WorkspaceMobileMenuButton';
 import WorkspaceRailHeader from './WorkspaceRailHeader';
 import { WorkspaceList, WorkspaceListRow } from './WorkspacePanels';
-import { backendCompactLabel } from '../modelPresentation';
+import { backendCompactLabel, capabilityColor } from '../modelPresentation';
 import { scheduleIdleWork } from '../startupScheduler';
 
 const Model3DResult = lazy(() => import(/* webpackChunkName: "chat-model3d" */ './Model3DResult'));
@@ -329,10 +329,6 @@ function mcpToolNamesForServers(servers: McpServerToolOption[], serverIds: strin
     .flatMap(server => server.toolOptions.map(tool => tool.runtimeName));
 }
 
-function modelModeBadge(capability: ModelCapability, recipe?: string | null): string {
-  return isRouterRecipe(recipe) ? 'router' : capabilityBadge(capability);
-}
-
 const ModelModeIcons: React.FC<{
   capability: ModelCapability;
   recipe?: string | null;
@@ -359,6 +355,19 @@ function modelModeLabel(capability: ModelCapability, audioInput = false): string
 
 function modelModeDisplayLabel(capability: ModelCapability, audioInput = false, recipe?: string | null): string {
   return isRouterRecipe(recipe) ? 'Router' : modelModeLabel(capability, audioInput);
+}
+
+function loadedOverviewSizeLabel(info: ModelInfo | null): string | null {
+  const sizeGb = Number(info?.size);
+  if (!Number.isFinite(sizeGb) || sizeGb <= 0) return null;
+  if (sizeGb >= 1) return `${sizeGb.toFixed(1)} GB`;
+  if (sizeGb >= 0.01) return `${(sizeGb * 1000).toFixed(0)} MB`;
+  return '< 1 MB';
+}
+
+function loadedOverviewDeviceLabel(model: LoadedModel): string | null {
+  const device = String(model.device || '').trim();
+  return device ? device.toUpperCase() : null;
 }
 
 function deriveTitle(messages: Message[]): string {
@@ -3229,7 +3238,7 @@ ${finalText}`
               onUnloadModel={handleLoadedCardUnload}
               unloadingModel={modelPickerUnloading}
               onChipClick={startLemonadeToolPrompt}
-              customModelInfos={customModelInfos}
+              modelInfos={knownModelInfos}
             />
           ) : (
             <div className="thread">
@@ -4112,108 +4121,144 @@ interface EmptyStateProps {
   onUnloadModel: (model: string) => void;
   unloadingModel: string | null;
   onChipClick: (text: string) => void;
-  customModelInfos: ModelInfo[];
+  modelInfos: ModelInfo[];
 }
 
-const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, customModelInfos }) => (
-  <>
-    <div className="hero">
-      <h1 className="hero__title">Get to know Lemonade</h1>
-      <p className="hero__subtitle">
-        {loadedModels.length > 0
-          ? `${loadedModels.length} model${loadedModels.length > 1 ? 's' : ''} ready. Ask a question or explore what Lemonade can do.`
-          : 'Ask a question to learn how Lemonade works and get started with your first model.'}
-      </p>
+const EmptyState: React.FC<EmptyStateProps> = ({ loadedModels, currentModel, onModelSelect, onOpenModelDetails, onUnloadModel, unloadingModel, onChipClick, modelInfos }) => {
+  if (loadedModels.length === 0) {
+    return (
+      <div className="hero">
+        <h1 className="hero__title">Get to know Lemonade</h1>
+        <p className="hero__subtitle">Ask a question to learn how Lemonade works and get started with your first model.</p>
 
-      <div className="chips" role="list">
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
-          How do I use Lemonade?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
-          How do I add a model?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
-          What are Lemonade tools?
-        </button>
-        <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
-          <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
-          What can my hardware run?
-        </button>
-      </div>
-    </div>
-
-    {loadedModels.length > 0 && (
-      <>
-        <div className="section-label">
-          <span>Loaded right now</span>
-          <span className="section-label__rule" />
+        <div className="chips" role="list">
+          <button className="chip" role="listitem" onClick={() => onChipClick('How do I get started with Lemonade?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="info" size={16} /></span>
+            How do I use Lemonade?
+          </button>
+          <button className="chip" role="listitem" onClick={() => onChipClick('How do I download and load a model in Lemonade?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="download" size={16} /></span>
+            How do I add a model?
+          </button>
+          <button className="chip" role="listitem" onClick={() => onChipClick('What are Lemonade tools, and how do I use them?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="tools" size={16} /></span>
+            What are Lemonade tools?
+          </button>
+          <button className="chip" role="listitem" onClick={() => onChipClick('What can my hardware run well with Lemonade?')}>
+            <span className="chip__icon" aria-hidden="true"><Icon name="gauge" size={16} /></span>
+            What can my hardware run?
+          </button>
         </div>
-        <div className="active-models">
-          {loadedModels.map(m => {
-            const customInfo = customModelInfos.find(cm => (cm.name || cm.id) === m.model_name);
-            const cap = customInfo ? capabilityFromModelInfo(customInfo) : capabilityFromLoaded(m);
-            const audioInput = modelSupportsChatAudioInput(customInfo || null, m);
-            const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
-            const modeBadge = modelModeBadge(cap, m.recipe);
-            const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
-            const isActive = currentModel === m.model_name;
-            return (
-              <article className="active-card" key={m.model_name}>
-                <div className="active-card__head">
-                  <div>
-                    <div className="active-card__name-row">
-                      <button
-                        type="button"
-                        className="active-card__name"
-                        onClick={() => onOpenModelDetails(m.model_name)}
-                        title={`Open ${m.model_name} in Models`}
-                      >
-                        {m.model_name}
-                      </button>
-                    </div>
-                    <div className="active-card__meta">{m.recipe || 'runtime'} · {m.checkpoint || 'default'}</div>
-                  </div>
-                  <span className="active-card__device">{m.device || 'device unknown'}</span>
-                </div>
-                <div className="active-card__badges">
-                  <span className={`cap-badge cap-badge--${modeBadge}`}><ModelModeIcons capability={cap} recipe={m.recipe} audioInput={audioInput} size={13} /> {modeLabel}</span>
-                </div>
-                <div className="active-card__actions">
-                  {isActive ? (
-                    <span className="active-card__status">● Active {modeLabel} mode</span>
-                  ) : selectable ? (
-                    <button className="active-card__action" onClick={() => onModelSelect(m.model_name)}>
-                      Use in {modeLabel}
-                    </button>
-                  ) : (
-                    <span className="active-card__status active-card__status--muted">Utility model only</span>
-                  )}
-                </div>
-                <div className="active-card__footer">
-                  <button type="button" className="active-card__details" onClick={() => onOpenModelDetails(m.model_name)}>
-                    View details
-                  </button>
+      </div>
+    );
+  }
+
+  return (
+    <section className="loaded-overview" aria-labelledby="loaded-overview-title">
+      <header className="loaded-overview__header">
+        <h1 id="loaded-overview-title" className="loaded-overview__title">Loaded now</h1>
+        <p className="loaded-overview__subtitle">
+          {loadedModels.length} model{loadedModels.length === 1 ? '' : 's'} ready for use
+        </p>
+      </header>
+
+      <div className="loaded-overview__list" role="list" aria-label="Loaded models">
+        {loadedModels.map(m => {
+          const modelInfo = findModelInfoByName(modelInfos, m.model_name);
+          const cap = modelInfo ? capabilityFromModelInfo(modelInfo) : capabilityFromLoaded(m);
+          const audioInput = modelSupportsChatAudioInput(modelInfo, m);
+          const modeLabel = modelModeDisplayLabel(cap, audioInput, m.recipe);
+          const taskColor = capabilityColor(isRouterRecipe(m.recipe) ? 'router' : cap);
+          const selectable = canSelectInComposer(m) || ['chat', 'omni', 'image', 'audio', 'audio-generation', 'tts', 'model3d'].includes(cap);
+          const isActive = currentModel === m.model_name;
+          const isUnloading = unloadingModel === m.model_name;
+          const sizeLabel = loadedOverviewSizeLabel(modelInfo);
+          const deviceLabel = loadedOverviewDeviceLabel(m);
+
+          return (
+            <article
+              className={`loaded-overview__row${isActive ? ' loaded-overview__row--selected' : ''}${isUnloading ? ' loaded-overview__row--busy' : ''}`}
+              key={m.model_name}
+              role="listitem"
+              aria-label={`${m.model_name}, ${modeLabel}, running${deviceLabel ? `, ${deviceLabel}` : ''}${sizeLabel ? `, ${sizeLabel}` : ''}${isActive ? ', selected' : ''}`}
+            >
+              <div
+                className="loaded-overview__task"
+                style={taskColor ? ({ '--loaded-task-color': taskColor } as React.CSSProperties) : undefined}
+              >
+                <span className="loaded-overview__task-icon" aria-hidden="true">
+                  <ModelModeIcons capability={cap} recipe={m.recipe} audioInput={audioInput} size={25} />
+                </span>
+                <span className="loaded-overview__task-label">{modeLabel}</span>
+              </div>
+
+              <div className="loaded-overview__identity">
+                <div className="loaded-overview__name-line">
+                  <span className="loaded-overview__name" title={m.model_name}>{m.model_name}</span>
                   <button
                     type="button"
-                    className="active-card__eject"
-                    onClick={() => onUnloadModel(m.model_name)}
-                    disabled={unloadingModel === m.model_name}
-                    title={`Unload ${m.model_name}`}
+                    className="loaded-overview__details-link"
+                    onClick={() => onOpenModelDetails(m.model_name)}
+                    aria-label={`Open ${m.model_name} model details`}
+                    title={`Open ${m.model_name} in Models`}
                   >
-                    {unloadingModel === m.model_name ? 'Unloading…' : 'Unload'}
+                    <Icon name="model-details" size={18} aria-hidden="true" />
                   </button>
                 </div>
-              </article>
-            );
-          })}
-        </div>
-      </>
-    )}
-  </>
-);
+                <div className="loaded-overview__status-line">
+                  <span className="loaded-overview__running">Running</span>
+                  {deviceLabel && (
+                    <span className="loaded-overview__device-badge" title={`Runtime device: ${deviceLabel}`}>
+                      {deviceLabel}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {sizeLabel && (
+                <span className="loaded-overview__resource" title="Known model size">
+                  {sizeLabel}
+                </span>
+              )}
+
+              <div className="loaded-overview__selection">
+                {isActive ? (
+                  <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected" aria-current="true">
+                    Selected
+                  </span>
+                ) : selectable ? (
+                  <button
+                    type="button"
+                    className="loaded-overview__selection-pill loaded-overview__selection-pill--use"
+                    onClick={() => onModelSelect(m.model_name)}
+                    disabled={isUnloading}
+                  >
+                    Use
+                  </button>
+                ) : (
+                  <span className="loaded-overview__selection-pill loaded-overview__selection-pill--selected">
+                    Loaded
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="loaded-overview__unload"
+                onClick={() => onUnloadModel(m.model_name)}
+                disabled={isUnloading}
+                aria-label={isUnloading ? `Unloading ${m.model_name}` : `Unload ${m.model_name}`}
+                title={isUnloading ? 'Unloading…' : `Unload ${m.model_name}`}
+              >
+                <Icon name={isUnloading ? 'clock' : 'eject'} size={17} aria-hidden="true" />
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+};
 
 /* ─── Message bubble ──────────────────────────────────── */
 
