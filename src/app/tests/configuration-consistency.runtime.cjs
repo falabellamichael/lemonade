@@ -13,6 +13,9 @@ const modelListPath = path.join(root, 'src/components/ModelListPanel.tsx');
 const modelConfigurationPath = path.join(root, 'src/modelConfiguration.ts');
 const recipeMetadataPath = path.join(root, 'src/features/backends/recipeMetadata.ts');
 const apiPath = path.join(root, 'src/api.ts');
+const managerPath = path.join(root, 'src/components/ModelManager.tsx');
+const globalSettingsPath = path.join(root, 'src/features/modelSettings/globalModelSettings.ts');
+const storagePath = path.join(root, 'src/storage.ts');
 const stylesPath = path.join(root, 'src/styles/styles.css');
 
 const sources = new Map([
@@ -25,6 +28,9 @@ const sources = new Map([
   [modelConfigurationPath, fs.readFileSync(modelConfigurationPath, 'utf8')],
   [recipeMetadataPath, fs.readFileSync(recipeMetadataPath, 'utf8')],
   [apiPath, fs.readFileSync(apiPath, 'utf8')],
+  [managerPath, fs.readFileSync(managerPath, 'utf8')],
+  [globalSettingsPath, fs.readFileSync(globalSettingsPath, 'utf8')],
+  [storagePath, fs.readFileSync(storagePath, 'utf8')],
 ]);
 const styles = fs.readFileSync(stylesPath, 'utf8');
 
@@ -57,6 +63,9 @@ const modelListSource = sources.get(modelListPath);
 const modelConfigurationSource = sources.get(modelConfigurationPath);
 const recipeMetadataSource = sources.get(recipeMetadataPath);
 const apiSource = sources.get(apiPath);
+const managerSource = sources.get(managerPath);
+const globalSettingsSource = sources.get(globalSettingsPath);
+const storageSource = sources.get(storagePath);
 
 assert.match(appSource, /<header className="titlebar" data-tauri-drag-region>/);
 assert.doesNotMatch(appSource, /titlebar--chat/);
@@ -112,103 +121,6 @@ assert.match(chatSource, /api\.getModelOptions\(model\.name\)/, 'capability TTS 
 assert.doesNotMatch(chatSource, /loadModelTuning\s*\([^)]*\)[^;\n]*recipe_options/, 'chat must not read recipe options from browser model tuning state');
 
 
-
-
-// GUI3 server-defined recipe metadata contract v3.
-assert.doesNotMatch(backendManagerSource, /RECIPE_CAPABILITY/, 'backend sections must not enumerate recipes');
-assert.doesNotMatch(backendManagerSource, /backendSupportsArgs/, 'backend Args availability must not use a recipe allowlist');
-assert.match(backendManagerSource, /llamacpp:\s+'llama\.cpp'/,
-  'functional recipe metadata refactor must preserve existing backend presentation labels');
-assert.match(backendManagerSource, /const label = `\$\{RECIPE_LABELS\[recipe\] \|\| recipe\} · \$\{backend \|\| 'default'\}`;/,
-  'backend Args dialog must preserve the established accessible recipe label');
-assert.match(backendManagerSource, /const engineName = RECIPE_LABELS\[recipe\] \|\| recipe;/,
-  'backend Args trigger must preserve the established accessible recipe label');
-assert.match(backendManagerSource, /const canEditArgs = backendArgsTarget\(runtimeConfig, cellKey\) !== null;/,
-  'backend Args availability must require the concrete writable runtime-config target');
-assert.match(backendManagerSource,
-  /const hasPerBackendArgs = Object\.keys\(section\)\.some\(key => key\.endsWith\('_args'\)\);[\s\S]*else if \(!hasPerBackendArgs && Object\.prototype\.hasOwnProperty\.call\(section, 'args'\)\)/,
-  'final #3183 per-backend args safety rule must remain intact');
-assert.doesNotMatch(detailSource, /IMAGE_RECIPE_KEYS|recipeKeysForRecipe\(|fallbackBackendsForRecipe\(/,
-  'Model Configuration must not map an unknown recipe onto a frontend recipe table');
-assert.match(detailSource, /recipeOptionNames\(info, recipe\)/,
-  'Model Configuration fields must come from recipes[].options[]');
-assert.match(detailSource, /recipeBackendOptionName\(systemInfo, activeRecipe\)/,
-  'device options must resolve their owning backend field from recipe metadata');
-assert.match(detailSource, /api\.getModelOptions\(name\)/,
-  'Model Configuration must keep reading model-specific defaults from lemond');
-assert.match(detailSource, /const baseValue = serverEffectiveRecipeOptions\[key\] \?\? baseTuning\.recipe_options\[key\];/,
-  'server-effective model defaults must win over frontend fallback values');
-
-assert.doesNotMatch(modelListSource, /BACKEND_MANAGED_RECIPES|BACKEND_OPTION_FIELD/,
-  'model readiness must not enumerate recipe ids or backend option names');
-assert.match(modelListSource, /recipeBackendOptionName\(systemInfo, recipe\)/,
-  'model readiness must discover the backend field from system-info');
-assert.match(modelConfigurationSource, /export type RecipeName = string;/,
-  'recipe ids must be an open server-owned set');
-assert.doesNotMatch(modelConfigurationSource, /BACKEND_ARGS_FIELD_BY_RECIPE|BACKEND_FIELD_BY_RECIPE/,
-  'backend option resolution must not keep per-recipe compatibility maps');
-assert.match(modelConfigurationSource, /backendArgsFieldForRecipe\(backendTuning\.recipe, systemInfo\)/,
-  'model backend args must resolve their option name from system-info');
-
-const metadataCompiled = ts.transpileModule(recipeMetadataSource, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
-  fileName: recipeMetadataPath,
-  reportDiagnostics: true,
-});
-const metadataErrors = (metadataCompiled.diagnostics || []).filter(
-  diagnostic => diagnostic.category === ts.DiagnosticCategory.Error,
-);
-assert.equal(metadataErrors.length, 0,
-  metadataErrors.map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')).join('\n'));
-const metadataModule = { exports: {} };
-new Function('module', 'exports', metadataCompiled.outputText)(metadataModule, metadataModule.exports);
-const metadata = metadataModule.exports;
-
-const recipeFixture = {
-  recipes: {
-    thenoise: {
-      modality: 'Image generation',
-      options: [
-        { name: 'thenoise_backend', type_name: 'BACKEND', help: 'TheNoise backend to use' },
-        { name: 'steps', type_name: 'SIZE', help: 'Number of denoising steps' },
-        { name: 'cfg_scale', type_name: 'SIZE', help: 'CFG scale' },
-        { name: 'width', type_name: 'SIZE', help: 'Output image width' },
-        { name: 'height', type_name: 'SIZE', help: 'Output image height' },
-        { name: 'sampler', type_name: 'ARGS', help: 'Denoising solver' },
-        { name: 'negative_prompt', type_name: 'ARGS', help: 'Negative prompt' },
-        { name: 'qwen_vae_enhance', type_name: 'BOOL', help: 'Nyquist notch post-filter' },
-        { name: 'film_grain', type_name: 'SIZE', help: 'Film grain strength' },
-        { name: 'sharpening', type_name: 'SIZE', help: 'RCAS sharpening strength' },
-        { name: 'lora_specs', type_name: 'ARGS', help: 'Comma-separated LoRA specs' },
-      ],
-    },
-    futurellm: {
-      modality: 'Text generation',
-      options: [
-        { name: 'futurellm_backend', type_name: 'BACKEND' },
-        { name: 'futurellm_args', type_name: 'ARGS' },
-      ],
-    },
-  },
-};
-assert.equal(metadata.recipeCapability(recipeFixture, 'thenoise'), 'Image');
-assert.deepEqual(metadata.recipeOptionNames(recipeFixture, 'thenoise'),
-  ['thenoise_backend', 'steps', 'cfg_scale', 'width', 'height', 'sampler', 'negative_prompt',
-    'qwen_vae_enhance', 'film_grain', 'sharpening', 'lora_specs']);
-assert.equal(metadata.recipeOptionIsBackend(recipeFixture, 'thenoise', 'thenoise_backend'), true);
-assert.equal(metadata.recipeOptionIsBoolean(recipeFixture, 'thenoise', 'qwen_vae_enhance'), true);
-assert.equal(metadata.recipeOptionIsNumeric(recipeFixture, 'thenoise', 'film_grain'), true);
-assert.equal(metadata.recipeOptionIsNumeric(recipeFixture, 'thenoise', 'sharpening'), true);
-assert.equal(metadata.recipeOptionIsArgs(recipeFixture, 'thenoise', 'lora_specs'), false,
-  'generic ARGS-valued recipe options are not backend argv fields');
-assert.equal(metadata.recipeOptionIsArgs(recipeFixture, 'futurellm', 'futurellm_args'), true,
-  'a future backend *_args field is discovered without a frontend recipe entry');
-assert.equal(metadata.recipeCapability({ recipes: { llamacpp: { backends: {} } } }, 'llamacpp'), 'Other',
-  'missing descriptor modality must not be hidden by a frontend recipe fallback');
-assert.deepEqual(metadata.recipeOptionNames({ recipes: { llamacpp: { backends: {} } } }, 'llamacpp'), [],
-  'missing descriptor options must not be hidden by a frontend recipe fallback');
-assert.equal(metadata.recipeCapability({ recipes: { strange: { modality: 'New modality' } } }, 'strange'), 'Other',
-  'unknown server modalities must not silently fall back to LLM');
 
 
 // GUI3 server-defined recipe metadata contract v4.
@@ -326,5 +238,24 @@ assert.deepEqual(metadata.recipeOptionNames({ recipes: { llamacpp: { backends: {
   'missing descriptor options must not be hidden by a frontend recipe fallback');
 assert.equal(metadata.recipeCapability({ recipes: { strange: { modality: 'New modality' } } }, 'strange'), 'Other',
   'unknown server modalities must not silently fall back to LLM');
+// server-owned pin contract
+assert.match(apiSource, /pinned: typeof model\.pinned === 'boolean'/, 'health normalization must preserve server pin state');
+assert.match(apiSource, /'\/internal\/pin'/, 'pin mutations must use the server endpoint');
+assert.match(managerSource, /loadedModels\.filter\(model => model\.pinned === true\)/, 'GUI pin state must derive from loaded server models');
+assert.match(managerSource, /api\.setModelPinned\(name, loaded\.pinned !== true\)/, 'GUI pin toggles must mutate server state');
+assert.match(managerSource, /onToggleFavorite=\{toggleFavoriteModel\}/, 'model list secondary action must be Favorite');
+assert.match(managerSource, /onTogglePin=\{selectedDetailModelId && displayLoadedModels\.some/, 'detail Pin handler must only be supplied for loaded models');
+assert.match(modelListSource, /ariaKeyShortcuts=\{onToggleFavorite \? 'F'/, 'model list must expose Favorite as its row shortcut');
+assert.match(modelListSource, /icon: 'star'/, 'model list secondary action must render Favorite');
+assert.doesNotMatch(modelListSource, /onTogglePin\?:/, 'model list must not own runtime Pin mutation');
+assert.doesNotMatch(managerSource, /loadPinnedModelNames|savePinnedModelNames/, 'ModelManager must not use browser pin persistence');
+assert.doesNotMatch(globalSettingsSource, /pinnedModelsKey|loadPinnedModelNames|savePinnedModelNames|pinned_models/, 'global model settings must not own pin persistence');
+assert.match(storageSource, /`\$\{STORAGE_PREFIX\}pinned_models`/, 'obsolete client pin storage must be cleaned up');
+
+// favorite hover-only row-action contract
+assert.doesNotMatch(modelListSource, /latched:\s*favorited/, 'Favorite must remain hover-only so backend info is visible at rest');
+assert.match(modelListSource, /active:\s*favorited/, 'favorited row action must keep active-state styling while hovered');
+assert.match(styles, /focus-within:not\(\.workspace-list-row--pointer-action\)\s+\.workspace-list-row__action/, 'pointer-only row action must not remain visible from row focus alone');
+assert.match(styles, /workspace-list-row__action--latched,\s*\n\.workspace-list-row__action--active\s*\{[^}]*color:\s*var\(--accent-fg\)/s, 'active row action must use the accent color without latching visibility');
 
 console.log('GUI3 configuration consistency contract checks passed.');

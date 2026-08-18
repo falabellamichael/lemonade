@@ -64,7 +64,6 @@ import {
 import {
   GLOBAL_MODEL_SETTINGS_EVENT,
   loadGlobalModelSettings,
-  loadPinnedModelNames,
   loadWithGlobalModelPolicy,
 } from '../features/modelSettings/globalModelSettings';
 
@@ -1729,7 +1728,9 @@ const ChatView: React.FC<ChatViewProps> = ({ currentModel: selectedModel, loaded
       loadedModels: currentLoaded,
       allModels: knownModelInfos,
       target,
-      pinnedNames: loadPinnedModelNames(),
+      pinnedNames: currentLoaded
+        .filter(model => model.pinned === true)
+        .map(model => model.model_name),
       settings: globalModelSettings,
       unload: name => api.unloadModel(name),
       load: () => api.loadModel(modelName, recipeOptions, target),
